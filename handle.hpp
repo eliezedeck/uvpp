@@ -133,7 +133,7 @@ namespace uvpp
 
         bool is_active()
         {
-            return uv_is_active(get()) != 0;
+            return uv_is_active((uv_handle_t*) get()) != 0;
         }
 
         void close(std::function<void()> callback = []{})
