@@ -11,15 +11,20 @@ class Timer: public handle<uv_timer_t>
 {
 public:
     Timer()
-            : handle()
+            : handle<uv_timer_t>()
     {
         uv_timer_init(uv_default_loop(), get());
     }
 
     Timer(loop &l)
-            : handle()
+            : handle<uv_timer_t>()
     {
         uv_timer_init(l.get(), get());
+    }
+
+    virtual ~Timer()
+    {
+        stop();
     }
 
     bool start(std::function<void()> callback, const uint64_t timeout,
