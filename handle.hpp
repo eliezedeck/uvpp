@@ -56,7 +56,11 @@ namespace uvpp
 
                 case UV_FS_EVENT: 
                     delete reinterpret_cast<uv_fs_event_t*>(*h);
-                    break;                    
+                    break;
+
+                case UV_PROCESS:
+                    delete reinterpret_cast<uv_process_t*>(*h);
+                    break;
 
                 default:
                     assert(0);

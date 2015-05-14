@@ -36,6 +36,7 @@ namespace uvpp
             uv_cid_fs_poll,
             uv_cid_fs_event,
             uv_cid_fs_scandir,
+            uv_cid_process_exit,
             uv_cid_max
         };
 
