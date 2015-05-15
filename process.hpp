@@ -7,28 +7,44 @@
  *      Author: Elie Zedeck RANDRIAMIANDRIRAY <rez@eliezedeck.com>
  */
 
-
 #include "handle.hpp"
 #include "loop.hpp"
+#include "pipe.hpp"
 
 #include <uv.h>
 
+#include <cstring>
 #include <iostream>
-
 
 using namespace std;
 
+namespace uvpp
+{
 
-namespace uvpp {
-
-class Process : public handle<uv_process_t>
+class Process: public handle<uv_process_t>
 {
 public:
-    Process(loop &l) :
-        handle<uv_process_t>(),
-        l(l)
+    enum {
+        STDIN = 0,
+        STDOUT,
+        STDERR
+    };
+
+    Process(loop &l)
+            : handle<uv_process_t>(), l(l)
     {
         options = {0};
+        ::memset(&stdios, 0, 3 * sizeof(uv_stdio_container_t));
+        options.stdio = stdios;
+        options.stdio_count = 3;
+    }
+
+    ~Process()
+    {
+        if (m_pipe_stdout)
+            delete m_pipe_stdout;
+        if (m_pipe_stderr)
+            delete m_pipe_stderr;
     }
 
     uv_process_options_t&
@@ -43,6 +59,30 @@ public:
         options = o;
     }
 
+    void
+    prepare_to_read_output(int stdio)
+    {
+        switch (stdio) {
+        case STDOUT:
+            if (!m_pipe_stdout) {
+                m_pipe_stdout = new Pipe(l);
+            }
+            options.stdio[1].flags = (uv_stdio_flags) (UV_CREATE_PIPE | UV_READABLE_PIPE);
+            options.stdio[1].data.stream = (uv_stream_t*) m_pipe_stdout->get();
+            break;
+        case STDERR:
+            if (!m_pipe_stderr) {
+                m_pipe_stderr = new Pipe(l);
+            }
+            options.stdio[2].flags = (uv_stdio_flags) (UV_CREATE_PIPE | UV_READABLE_PIPE);
+            options.stdio[2].data.stream = (uv_stream_t*) m_pipe_stderr->get();
+            break;
+        default:
+            throw exception("Only STDOUT and STDERR supported for prepare_to_read_output()");
+            break;
+        }
+    }
+
     int
     kill(int sig=SIGTERM)
     {
@@ -53,6 +93,14 @@ public:
         }
     }
 
+    /**
+     * start() launches the process for execution.
+     *
+     * Guidelines:
+     * - Capturing outputs: set stdio flag to UV_CREATE_PIPE | UV_READABLE_PIPE for stdout/stderr
+     * - Send inputs: set stdio flag to UV_CREATE_PIPE | UV_WRITABLE_PIPE for stdin
+     * - read_start_output() ONLY after calling this start()
+     */
     bool
     start(std::function<void(int64_t exit_status, int term_signal)> callback) {
         m_is_running = true;
@@ -69,9 +117,32 @@ public:
         return uv_spawn(l.get(), get(), &options);
     }
 
+    template<size_t max_alloc_size>
+    bool
+    read_start_output(int stdio, std::function<void(const char* buf, ssize_t len)> callback)
+    {
+        switch (stdio) {
+        case STDOUT:
+            assert(m_pipe_stdout != nullptr);
+            m_pipe_stdout->read_start<max_alloc_size>(callback);
+            break;
+        case STDERR:
+            assert(m_pipe_stderr != nullptr);
+            m_pipe_stderr->read_start<max_alloc_size>(callback);
+            break;
+        default:
+            throw exception("Only STDOUT and STDERR supported for read_start_output()");
+            break;
+        }
+    }
+
 private:
     loop &l;
+    uv_stdio_container_t stdios[3];
     uv_process_options_t options;
+
+    Pipe* m_pipe_stdout = nullptr;
+    Pipe* m_pipe_stderr = nullptr;
 
     bool m_is_running = false;
 };
