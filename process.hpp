@@ -33,38 +33,39 @@ public:
     Process(loop &l)
             : handle<uv_process_t>(), l(l)
     {
-        options = {0};
-        ::memset(&stdios, 0, 3 * sizeof(uv_stdio_container_t));
-        options.stdio = stdios;
-        options.stdio_count = 3;
+        options = new uv_process_options_t;
+        options->stdio = new uv_stdio_container_t[3];
+        ::memset(options->stdio, 0, 3 * sizeof(uv_stdio_container_t));
+        options->stdio_count = 3;
     }
 
     virtual ~Process()
     {
-//        if (m_pipe_stdout) {
-//            m_pipe_stdout->close([=]() {
-//                cout << "Deleted STDOUT" << endl;
-//                delete m_pipe_stdout;
-//            });
-//        }
-//        if (m_pipe_stderr) {
-//            m_pipe_stderr->close([=]() {
-//                delete m_pipe_stderr;
-//            });
-//        }
-        cout << "Process deleted" << endl;
+        if (m_pipe_stdout) {
+            m_pipe_stdout->close([=]() {
+                delete m_pipe_stdout;
+            });
+        }
+        if (m_pipe_stderr) {
+            m_pipe_stderr->close([=]() {
+                delete m_pipe_stderr;
+            });
+        }
+
+        delete[] options->stdio;
+        delete   options;
     }
 
     uv_process_options_t&
     get_options()
     {
-        return options;
+        return *options;
     }
 
     void
     set_options(uv_process_options_t o)
     {
-        options = o;
+        *options = o;
     }
 
     void
@@ -75,15 +76,15 @@ public:
             if (!m_pipe_stdout) {
                 m_pipe_stdout = new Pipe(l);
             }
-            options.stdio[1].flags = (uv_stdio_flags) (UV_CREATE_PIPE | UV_READABLE_PIPE);
-            options.stdio[1].data.stream = (uv_stream_t*) m_pipe_stdout->get();
+            options->stdio[1].flags = (uv_stdio_flags) (UV_CREATE_PIPE | UV_READABLE_PIPE);
+            options->stdio[1].data.stream = (uv_stream_t*) m_pipe_stdout->get();
             break;
         case STDERR:
             if (!m_pipe_stderr) {
                 m_pipe_stderr = new Pipe(l);
             }
-            options.stdio[2].flags = (uv_stdio_flags) (UV_CREATE_PIPE | UV_READABLE_PIPE);
-            options.stdio[2].data.stream = (uv_stream_t*) m_pipe_stderr->get();
+            options->stdio[2].flags = (uv_stdio_flags) (UV_CREATE_PIPE | UV_READABLE_PIPE);
+            options->stdio[2].data.stream = (uv_stream_t*) m_pipe_stderr->get();
             break;
         default:
             throw exception("Only STDOUT and STDERR supported for prepare_to_read_output()");
@@ -118,7 +119,7 @@ public:
         m_is_running = true;
 
         callbacks::store(get()->data, internal::uv_cid_process_exit, callback, this);
-        options.exit_cb = [](uv_process_t* handle, int64_t exit_status, int term_signal) {
+        options->exit_cb = [](uv_process_t* handle, int64_t exit_status, int term_signal) {
             if (auto proc = reinterpret_cast<Process*>(callbacks::get_data<decltype(callback)>(handle->data, internal::uv_cid_process_exit))) {
                 proc->m_is_running = false;
                 proc->close();
@@ -126,7 +127,7 @@ public:
             callbacks::invoke<decltype(callback)>(handle->data, internal::uv_cid_process_exit, exit_status, term_signal);
         };
 
-        return uv_spawn(l.get(), get(), &options);
+        return uv_spawn(l.get(), get(), options);
     }
 
     template<size_t max_alloc_size>
@@ -148,25 +149,10 @@ public:
         }
     }
 
-    void tear_down_outputs()
-    {
-        if (m_pipe_stdout) {
-            m_pipe_stdout->close([=]() {
-                cout << "Deleted STDOUT" << endl;
-                delete m_pipe_stdout;
-            });
-        }
-        if (m_pipe_stderr) {
-            m_pipe_stderr->close([=]() {
-                delete m_pipe_stderr;
-            });
-        }
-    }
-
 private:
     loop &l;
-    uv_stdio_container_t stdios[3];
-    uv_process_options_t options;
+    uv_stdio_container_t* stdios  = nullptr;
+    uv_process_options_t* options = nullptr;
 
     Pipe* m_pipe_stdout = nullptr;
     Pipe* m_pipe_stderr = nullptr;
