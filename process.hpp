@@ -39,12 +39,20 @@ public:
         options.stdio_count = 3;
     }
 
-    ~Process()
+    virtual ~Process()
     {
-        if (m_pipe_stdout)
-            delete m_pipe_stdout;
-        if (m_pipe_stderr)
-            delete m_pipe_stderr;
+//        if (m_pipe_stdout) {
+//            m_pipe_stdout->close([=]() {
+//                cout << "Deleted STDOUT" << endl;
+//                delete m_pipe_stdout;
+//            });
+//        }
+//        if (m_pipe_stderr) {
+//            m_pipe_stderr->close([=]() {
+//                delete m_pipe_stderr;
+//            });
+//        }
+        cout << "Process deleted" << endl;
     }
 
     uv_process_options_t&
@@ -100,6 +108,10 @@ public:
      * - Capturing outputs: set stdio flag to UV_CREATE_PIPE | UV_READABLE_PIPE for stdout/stderr
      * - Send inputs: set stdio flag to UV_CREATE_PIPE | UV_WRITABLE_PIPE for stdin
      * - read_start_output() ONLY after calling this start()
+     *
+     * Notes:
+     * - There is no need to close() the Process because UV already does that when the process
+     *   has been completed.
      */
     bool
     start(std::function<void(int64_t exit_status, int term_signal)> callback) {
@@ -133,6 +145,21 @@ public:
         default:
             throw exception("Only STDOUT and STDERR supported for read_start_output()");
             break;
+        }
+    }
+
+    void tear_down_outputs()
+    {
+        if (m_pipe_stdout) {
+            m_pipe_stdout->close([=]() {
+                cout << "Deleted STDOUT" << endl;
+                delete m_pipe_stdout;
+            });
+        }
+        if (m_pipe_stderr) {
+            m_pipe_stderr->close([=]() {
+                delete m_pipe_stderr;
+            });
         }
     }
 
